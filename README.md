@@ -309,36 +309,22 @@ Start the system:
 docker compose up --build
 ```
 
+Run several workers in parallel:
+
+```bash
+docker compose up --build --scale worker=3
+```
+
+If the images are already built:
+
+```bash
+docker compose up --scale worker=3
+```
+
 API will be available at:
 
 ```text
 http://localhost:8000
-```
-
-### Useful requests
-
-Create a job:
-
-```bash
-curl -F "file=@small.txt;type=text/plain" http://localhost:8000/public/report/export
-```
-
-Check status:
-
-```bash
-curl http://localhost:8000/public/report/export/<job_id>
-```
-
-Download result:
-
-```bash
-curl -OJ http://localhost:8000/public/report/export/<job_id>/download
-```
-
-Health check:
-
-```bash
-curl http://localhost:8000/health
 ```
 
 ## Environment variables
@@ -401,6 +387,41 @@ docker compose logs cleaner
 ```
 
 The most informative stream during report generation is usually the worker log.
+
+## Scalability
+
+The project is designed to handle large files better than a single synchronous FastAPI endpoint would.
+
+What already scales reasonably well:
+
+- the API does not perform heavy report generation itself
+- report generation is moved to background workers
+- several worker containers can consume the same Redis queue in parallel
+- uploaded files, temporary work files and final results are stored on disk instead of in memory
+- job status is stored in PostgreSQL, so status checks do not depend on worker memory or Redis job lifetime
+- sparse per-line counts keep report size under control much better than the original dense format
+
+In practice this means that if several users upload large files at the same time, the API can keep accepting jobs and the queue can be processed by multiple workers. A simple way to increase throughput is to scale the worker service:
+
+```bash
+docker compose up --scale worker=3
+```
+
+This allows up to three reports to be processed at the same time.
+
+Current limits and trade-offs:
+
+- a single huge report is still processed by one worker, so horizontal scaling improves throughput, not the speed of one job
+- upload itself still goes through the FastAPI application, so many simultaneous large uploads can still put pressure on disk I/O and network I/O
+- SQLite temporary aggregation is local to each job, which is fine for isolated workers, but disk performance becomes important under load
+
+If the project had to be pushed further, the next steps would be:
+
+- object storage or a separate upload gateway for very large files
+- request throttling or upload limits
+- better resource isolation for workers
+- external monitoring and alerting
+- a production-grade deployment for Redis and PostgreSQL
 
 ## Notes and trade-offs
 
