@@ -1,0 +1,12 @@
+[project]
+name = "test-2026-03-20"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.135.1",
+    "pymorphy3>=2.0.6",
+    "psycopg[binary]>=3.2.12",
+    "rq>=2.7.0",
+    "sqlalchemy>=2.0.48",
+    "xlsxwriter>=3.2.9",
+]

@@ -1,0 +1,106 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-reports}
+      POSTGRES_USER: ${POSTGRES_USER:-reports}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reports}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-reports} -d ${POSTGRES_DB:-reports}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REPORT_QUEUE_NAME: ${REPORT_QUEUE_NAME:-reports}
+      REPORT_DATABASE_URL: ${REPORT_DATABASE_URL:-postgresql+psycopg://reports:reports@postgres:5432/reports}
+      REPORT_UPLOADS_DIR: ${REPORT_UPLOADS_DIR:-/data/uploads}
+      REPORT_RESULTS_DIR: ${REPORT_RESULTS_DIR:-/data/results}
+      REPORT_WORK_DIR: ${REPORT_WORK_DIR:-/data/work}
+      RQ_JOB_TIMEOUT_SECONDS: ${RQ_JOB_TIMEOUT_SECONDS:-3600}
+      RQ_RESULT_TTL_SECONDS: ${RQ_RESULT_TTL_SECONDS:-86400}
+      RQ_FAILURE_TTL_SECONDS: ${RQ_FAILURE_TTL_SECONDS:-604800}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/uploads:/data/uploads
+      - ./data/results:/data/results
+      - ./data/work:/data/work
+
+  worker:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["/app/docker/start-worker.sh"]
+    environment:
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_DB: ${REDIS_DB:-0}
+      REPORT_QUEUE_NAME: ${REPORT_QUEUE_NAME:-reports}
+      REPORT_DATABASE_URL: ${REPORT_DATABASE_URL:-postgresql+psycopg://reports:reports@postgres:5432/reports}
+      REPORT_UPLOADS_DIR: ${REPORT_UPLOADS_DIR:-/data/uploads}
+      REPORT_RESULTS_DIR: ${REPORT_RESULTS_DIR:-/data/results}
+      REPORT_WORK_DIR: ${REPORT_WORK_DIR:-/data/work}
+      RQ_JOB_TIMEOUT_SECONDS: ${RQ_JOB_TIMEOUT_SECONDS:-3600}
+      RQ_RESULT_TTL_SECONDS: ${RQ_RESULT_TTL_SECONDS:-86400}
+      RQ_FAILURE_TTL_SECONDS: ${RQ_FAILURE_TTL_SECONDS:-604800}
+    volumes:
+      - ./data/uploads:/data/uploads
+      - ./data/results:/data/results
+      - ./data/work:/data/work
+
+  cleaner:
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    restart: unless-stopped
+    user: root
+    command: ["/app/docker/start-cleaner.sh"]
+    environment:
+      CLEANER_CRON_SCHEDULE: ${CLEANER_CRON_SCHEDULE:-0 * * * *}
+      REPORT_UPLOADS_DIR: ${REPORT_UPLOADS_DIR:-/data/uploads}
+      REPORT_RESULTS_DIR: ${REPORT_RESULTS_DIR:-/data/results}
+      REPORT_WORK_DIR: ${REPORT_WORK_DIR:-/data/work}
+      CLEANER_UPLOADS_TTL_HOURS: ${CLEANER_UPLOADS_TTL_HOURS:-1}
+      CLEANER_WORK_TTL_HOURS: ${CLEANER_WORK_TTL_HOURS:-1}
+    volumes:
+      - ./data/uploads:/data/uploads
+      - ./data/results:/data/results
+      - ./data/work:/data/work
+
+volumes:
+  postgres_data:
+  redis_data:

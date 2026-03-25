@@ -1,0 +1,2 @@
+class ReportTooLargeForExcelError(Exception):
+    pass
